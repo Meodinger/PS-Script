@@ -1,5 +1,5 @@
 namespace I18n {
-    export var APP_NAME: string = "LabelPlus Script";
+    export var APP_NAME: string = "LabelPlusFX Script";
 
     export var BUTTON_RUN: string = "导入";
     export var BUTTON_CANCEL: string = "关闭";

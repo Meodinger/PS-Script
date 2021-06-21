@@ -109,7 +109,7 @@ class LabelPlusInput extends GenericUI {
             let outputPnl = this.outputPnl;
             let automationPnl = this.automationPnl;
 
-            let fmask = "*.txt;*.json";
+            let fmask = "*.json";
             let f = File.openDialog(I18n.LABEL_TEXT_FILE, fmask);
             if (f && f.exists) {
                 pnl.lpTextFileTextBox.text = f.fsName;

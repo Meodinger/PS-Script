@@ -22,7 +22,7 @@ namespace LabelPlus {
     interface MeoFile {
         version: number[];
         comment: string;
-        group: {
+        groupList: {
             color: string;
             name: string;
         }[],
@@ -57,8 +57,8 @@ namespace LabelPlus {
         const meoFile: MeoFile = data;
 
         let groups: string[] = [];
-        for (let i = 0; i < meoFile.group.length; i++) {
-           groups.push(meoFile.group[i].name);
+        for (let i = 0; i < meoFile.groupList.length; i++) {
+           groups.push(meoFile.groupList[i].name);
         }
 
         let label_dict: LpLabelDict = {};

@@ -109,7 +109,7 @@ class LabelPlusInput extends GenericUI {
             let outputPnl = this.outputPnl;
             let automationPnl = this.automationPnl;
 
-            let fmask = "*.json";
+            let fmask = "*.txt;*.json";
             let f = File.openDialog(I18n.LABEL_TEXT_FILE, fmask);
             if (f && f.exists) {
                 pnl.lpTextFileTextBox.text = f.fsName;
@@ -121,7 +121,7 @@ class LabelPlusInput extends GenericUI {
             }
 
             // load lptext file
-            let lpFile = lpTextParser(f.fsName);
+            let lpFile = parseTransFile(f.fsName);
             if (lpFile === null) {
                 alert(I18n.ERROR_PARSER_LPTEXT_FAIL);
                 return {};
@@ -158,7 +158,7 @@ class LabelPlusInput extends GenericUI {
                     alert(I18n.ERROR_NOT_FOUND_LPTEXT);
                     return null;
                 }
-                let lpFile = lpTextParser(pnl.lpTextFileTextBox.text);
+                let lpFile = parseTransFile(pnl.lpTextFileTextBox.text);
                 if (lpFile == null) {
                     alert(I18n.ERROR_PARSER_LPTEXT_FAIL);
                     return null;

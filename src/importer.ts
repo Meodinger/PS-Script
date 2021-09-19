@@ -344,7 +344,7 @@ export function importFiles(custom_opts: CustomOptions): boolean
     log("Properties end   ------------------");
 
     //解析LabelPlus文本
-    let lpFile = lpTextParser(opts.lpTextFilePath);
+    let lpFile = parseTransFile(opts.lpTextFilePath);
     if (lpFile == null) {
         log_err("error: " + I18n.ERROR_PARSER_LPTEXT_FAIL);
         return false;

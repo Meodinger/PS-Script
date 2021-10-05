@@ -152,7 +152,7 @@ namespace LabelPlus {
             const index = parseInt(s[0].replace(LABEL_START, "").trim())
             const x = parseFloat(props[0].trim())
             const y = parseFloat(props[1].trim())
-            const groupId = parseInt(props[2].trim())
+            const groupId = parseInt(props[2].trim()) - 1
 
             pointer++
             return {

@@ -2,41 +2,38 @@
 /// <reference path="legacy.d.ts" />
 
 namespace LabelPlus {
-    export interface LpLabel {
+
+    export type LPGroup = string
+    export type LPLabel = {
         x: number;
         y: number;
-        contents: string;
-        group: string;
+        text: string;
+        groupName: string;
     }
-
-    export type LpLabelDict = {
-        [key: string]: LpLabel[]
-    };
-
-    export interface LpFile {
+    export type LPTransMap = {
+        [key: string]: LPLabel[]
+    }
+    export type LPFile = {
         path: string;
-        groups: string[];
-        images: LpLabelDict;
+        groupList: string[];
+        transMap: LPTransMap;
     }
 
-    interface MeoLabel {
+    type MeoLabel = {
         groupId: number;
         index: number;
         text: string
         x: number;
         y: number;
     }
-
-    interface MeoGroup {
+    type MeoGroup = {
         color: string;
         name: string;
     }
-
-    interface MeoTransMap {
+    type MeoTransMap = {
         [key: string]: MeoLabel[]
     }
-
-    interface MeoFile {
+    type MeoFile = {
         version: number[];
         comment: string;
         groupList: MeoGroup[],
@@ -52,44 +49,40 @@ namespace LabelPlus {
     const SPLIT = ","
     const SEPARATOR = "-"
 
-    function startWith(str: string, head: string): boolean {
-        return str.indexOf(head) === 0
-    }
+    function meo2lp(path: string, meoFile: MeoFile): LPFile {
 
-    function meo2lp(path: string, meoFile: MeoFile): LpFile {
-
-        let groups: string[] = [];
+        let groupList: LPGroup[] = [];
         for (let i = 0; i < meoFile.groupList.length; i++) {
-            groups.push(meoFile.groupList[i].name);
+            groupList.push(meoFile.groupList[i].name);
         }
 
-        let label_dict: LpLabelDict = {};
+        let transMap: LPTransMap = {};
 
         for (let picName in meoFile.transMap) {
-            let labels: LpLabel[] = [];
+            let labels: LPLabel[] = [];
             for (let label of meoFile.transMap[picName]) {
-                let l: LpLabel = {
+                let l: LPLabel = {
                     x: label.x,
                     y: label.y,
-                    group: groups[label.groupId],
-                    contents: label.text.replace(" ", "\n"),
+                    groupName: groupList[label.groupId],
+                    text: label.text.replace(" ", "\n"),
                 }
                 labels.push(l);
             }
-            label_dict[picName] = labels;
+            transMap[picName] = labels;
         }
 
         return {
             path: path,
-            groups: groups,
-            images: label_dict
+            groupList: groupList,
+            transMap: transMap
         };
     }
 
-    function parseMeoFile(path: string): LpFile | null {
+    function parseMeoFile(path: string): LPFile | null {
         const f = new File(path);
         if (!f || !f.exists) {
-            log_err("LabelPlusFXJsonReader: file " + path + " not exists");
+            err("LabelPlusFXJsonReader: file " + path + " not exists");
             return null;
         }
 
@@ -102,21 +95,17 @@ namespace LabelPlus {
 
         f.close();
 
-        // ugly js
-
         return meo2lp(path, data)
     }
 
-    // @ts-ignore
-    function parseLPFile(path: string): LpFile | null {
+    function parseLPFile(path: string): LPFile | null {
         const f = new File(path);
         if (!f || !f.exists) {
-            log_err("LabelPlusFXTextReader: file " + path + " not exists");
+            err("LabelPlusFXTextReader: file " + path + " not exists");
             return null;
         }
 
-        // 打开
-        f.open("r");
+        f.open("r", "TEXT", "????");
         f.lineFeed = "unix";
         f.encoding = 'UTF-8';
 
@@ -127,12 +116,12 @@ namespace LabelPlus {
 
         let pointer = 0
 
-        const parseText = (marks: string[]): string => {
+        function parseText(marks: string[]): string {
             let str = "";
 
             while (pointer < size) {
                 for (let mark of marks) {
-                    if (startWith(lines[pointer], mark)) {
+                    if (startsWith(lines[pointer], mark)) {
                         // return when read stop mark
                         return str.replace(RegExp("\n+"), "\n").trim()
                     }
@@ -145,7 +134,7 @@ namespace LabelPlus {
             // return when eof
             return str.replace(RegExp("\n+"), "\n").trim()
         }
-        const parseTransLabel = (): MeoLabel => {
+        function parseTransLabel(): MeoLabel {
             const s = lines[pointer].split(LABEL_END)
             const props = s[1].replace(PROP_START, "").replace(PROP_END, "").split(SPLIT)
 
@@ -163,21 +152,21 @@ namespace LabelPlus {
                 y: y,
             }
         }
-        const parsePicHead = (): string => {
+        function parsePicHead(): string {
             const picName = lines[pointer].replace(PIC_START, "").replace(PIC_END, "")
             pointer++
 
             return picName
         }
-        const parsePicBody = (): MeoLabel[] => {
+        function parsePicBody(): MeoLabel[] {
             const labels: MeoLabel[] = [];
 
-            while (pointer < size && startWith(lines[pointer], LABEL_START)) {
+            while (pointer < size && startsWith(lines[pointer], LABEL_START)) {
                 labels.push(parseTransLabel())
             }
 
             // move to next pic
-            while (pointer < size && !startWith(lines[pointer], PIC_START)) {
+            while (pointer < size && !startsWith(lines[pointer], PIC_START)) {
                 pointer++
             }
 
@@ -192,7 +181,7 @@ namespace LabelPlus {
         // Separator
         pointer++
 
-        // Group Info and a Separator
+        // GroupInfo Info and a Separator
         let groupCount = 1
         const groupList: MeoGroup[] = []
         while (lines[pointer] != SEPARATOR && groupCount < 10) {
@@ -211,7 +200,7 @@ namespace LabelPlus {
 
         // Content
         const transMap: MeoTransMap = {}
-        while (pointer < size && startWith(lines[pointer], PIC_START)) {
+        while (pointer < size && startsWith(lines[pointer], PIC_START)) {
             const picName = parsePicHead()
             transMap[picName] = parsePicBody()
         }
@@ -226,7 +215,7 @@ namespace LabelPlus {
         return meo2lp(path, transFile)
     }
 
-    export function parseTransFile(path: string): LpFile | null {
+    export function parseTransFile(path: string): LPFile | null {
         if (path.substring(path.lastIndexOf("."), path.length) == '.json') return parseMeoFile(path)
         if (path.substring(path.lastIndexOf("."), path.length) == '.txt') return parseLPFile(path)
         return null

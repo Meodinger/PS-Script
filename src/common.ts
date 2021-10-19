@@ -3,117 +3,118 @@
 
 namespace LabelPlus {
 
-export function assert(condition: any, msg?: string): asserts condition {
-    if (!condition) {
-        throw new Error("error: assert " + condition);
+    // --------------- Common --------------- //
+
+    export function min(a: number, b: number): number {
+        return (a < b) ? a : b;
     }
-}
-
-// Operating System related
-export let dirSeparator = $.os.search(/windows/i) === -1 ? '/' : '\\';
-
-export const TEMPLATE_LAYER = {
-    TEXT:  "text",
-    IMAGE: "bg",
-    DIALOG_OVERLAY: "dialog-overlay",
-};
-
-export const image_suffix_list = [".psd", ".png", ".jpg", ".jpeg", ".tif", ".tiff"];
-
-export function GetScriptPath(): string {
-    return <string>$.fileName;
-}
-
-export function GetScriptFolder(): string {
-    return (new Folder(GetScriptPath())).path;
-}
-
-export function FileIsExists(path: string): boolean {
-    return (new File(path)).exists;
-}
-
-export function Emit(func: Function): void {
-    if (func !== undefined)
-        func();
-}
-
-export function StringEndsWith(str: string, suffix: string) {
-    return str.indexOf(suffix, str.length - suffix.length) !== -1;
-}
-
-export function getImageFilesListOfPath(path: string): string[] {
-    let folder = new Folder(path);
-    if (!folder.exists) {
-        return new Array<string>();
+    export function emit(func: Function) {
+        if (func) {
+            func();
+        }
+    }
+    export function assert(condition: any, msg?: string): asserts condition {
+        if (!condition) {
+            throw new Error("error: assert " + condition + (msg ? (", msg=" + msg) : ""));
+        }
+    }
+    export function delArrayElement<T>(arr: T[], element: T) {
+        let idx = arr.indexOf(element);
+        if (idx >= 0) arr.splice(idx, 1);
     }
 
-    let fileList = folder.getFiles();
-    let fileNameList = new Array();
+    // --------------- Constants --------------- //
 
-    for (let i = 0; i < fileList.length; i++) {
-        let file = fileList[i];
-        if (file instanceof File) {
-            let tmp = file.toString().split("/");
-            let short_name = tmp[tmp.length - 1];
-            for (let i = 0; i < image_suffix_list.length; i++) {
-                if (StringEndsWith(short_name.toLowerCase(), image_suffix_list[i])) {
-                    fileNameList.push(short_name);
-                    break;
+    export const DIR_SEPARATOR    = $.os.search(/windows/i) === -1 ? '/' : '\\';
+    export const IMAGE_EXTENSIONS = [".psd", ".png", ".jpg", ".jpeg", ".tif", ".tiff"];
+    export const TEMPLATE_LAYER   = {
+        TEXT:  "text",
+        IMAGE: "bg",
+        DIALOG_OVERLAY: "dialog-overlay",
+    }
+
+    // --------------- File Related --------------- //
+
+    export function isFileExists(path: string): boolean {
+        return (new File(path)).exists;
+    }
+    export function getFileExtension(filename: string): string {
+        return filename.substring(filename.lastIndexOf("."), filename.length)
+    }
+
+    export function GetScriptFilePath(): string {
+        return <string>$.fileName;
+    }
+    export function GetScriptFolderPath(): string {
+        return (new Folder(GetScriptFilePath())).path;
+    }
+    export function GetImagePathList(path: string): string[] {
+        const folder = new Folder(path);
+        if (!folder.exists) return [];
+
+        const fileList: File[] = folder.getFiles();
+        const pathList: string[] = [];
+
+        for (let i = 0; i < fileList.length; i++) {
+            const file = fileList[i];
+            if (file instanceof File) {
+                let temp = file.toString().split("/");
+                let simpleName = temp[temp.length - 1];
+                for (let i = 0; i < IMAGE_EXTENSIONS.length; i++) {
+                    if (endsWith(simpleName.toLowerCase(), IMAGE_EXTENSIONS[i])) {
+                        pathList.push(simpleName);
+                        break;
+                    }
                 }
             }
         }
+
+        return pathList.sort();
     }
 
-    return fileNameList.sort();
-}
+    // --------------- String --------------- //
 
-export function getFileSuffix(filename: string) {
-	return filename.substring(filename.lastIndexOf("."), filename.length)
-}
-
-export function doAction(action: string, actionSet: string): boolean
-{
-    if (Stdlib.hasAction(action, actionSet) === true) {
-        app.doAction(action, actionSet);
-        return true;
+    export function startsWith(str: string, head: string): boolean {
+        return str.indexOf(head) === 0;
     }
-    else {
+    export function endsWith(str: string, suffix: string): boolean {
+        return str.indexOf(suffix, str.length - suffix.length) !== -1;
+    }
+
+    // --------------- Action --------------- //
+
+    export function doAction(action: string, actionSet: string): boolean {
+        if (Stdlib.hasAction(action, actionSet)) {
+           app.doAction(action, actionSet);
+           return true;
+        }
+
         return false;
     }
-}
 
-export function min(a: number, b: number): number {
-    return (a < b) ? a : b;
-}
+    // --------------- Global Variable --------------- //
 
-export function delArrayElement<T>(arr: Array<T>, element: T) {
-    let idx = arr.indexOf(element);
-    if (idx >= 0) {
-        arr.splice(idx, 1);
+    let dataPath = Folder.appData.fsName + DIR_SEPARATOR + "labelplus_script";
+    let dataFolder = new Folder(dataPath);
+    if (!dataFolder.exists) {
+        if (!dataFolder.create()) {
+            dataPath = Folder.temp.fsName;
+        }
     }
-}
+    export const APP_DATA_FOLDER: string = dataPath;
+    export const DEFAULT_LOG_PATH: string = APP_DATA_FOLDER + DIR_SEPARATOR + "lp_ps_script.log";
+    export const DEFAULT_INI_PATH: string = APP_DATA_FOLDER + DIR_SEPARATOR + "lp_ps_script.ini";
+    export const DEFAULT_DUMP_PATH: string = APP_DATA_FOLDER + DIR_SEPARATOR + "lp_ps_script.dump";
+    export let commonLog: string = "";
+    export let errorLog: string = "";
 
-let dataPath = Folder.appData.fsName + dirSeparator + "labelplus_script";
-let dataFolder = new Folder(dataPath);
-if (!dataFolder.exists) {
-    if (!dataFolder.create()) {
-        dataPath = Folder.temp.fsName;
+    Stdlib.log.setFile(DEFAULT_LOG_PATH);
+    export function log(msg: any) { Stdlib.log(msg); commonLog += msg + '\n'; }
+    export function err(msg: any) { Stdlib.log(msg); errorLog += msg + '\n'; commonLog += msg + '\n'; }
+    export function dump(o: any) { alert(Stdlib.listProps(o)); }
+
+    export function FileNamePair(origin: string, matched: string): string {
+        return origin + "(" + matched + ")";
     }
+
 }
-export const APP_DATA_FOLDER: string = dataPath;
-export const DEFAULT_LOG_PATH: string = APP_DATA_FOLDER + dirSeparator + "lp_ps_script.log";
-export const DEFAULT_INI_PATH: string = APP_DATA_FOLDER + dirSeparator + "lp_ps_script.ini";
-export const DEFAULT_DUMP_PATH: string = APP_DATA_FOLDER + dirSeparator + "lp_ps_script.dump";
-export let alllog: string = "";
-export let errlog: string = "";
-
-Stdlib.log.setFile(DEFAULT_LOG_PATH);
-export function log(msg: any) { Stdlib.log(msg); alllog += msg + '\n'; }
-export function log_err(msg: any) { Stdlib.log(msg); errlog += msg + '\n'; alllog += msg + '\n'; }
-export function showdump(o: any) { alert(Stdlib.listProps(o)); }
-
-export function str_filename_pair(file_orign: string, file_matched: string): string {
-    return file_orign + "(" + file_matched + ")";
-}
-
-} // namespace LabelPlus

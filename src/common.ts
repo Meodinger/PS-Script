@@ -8,19 +8,18 @@ namespace LabelPlus {
     export function min(a: number, b: number): number {
         return (a < b) ? a : b;
     }
+    export function max(a: number, b: number): number {
+        return (a < b) ? b : a;
+    }
     export function emit(func: Function) {
-        if (func) {
-            func();
-        }
+        if (func) func();
     }
     export function assert(condition: any, msg?: string): asserts condition {
-        if (!condition) {
-            throw new Error("error: assert " + condition + (msg ? (", msg=" + msg) : ""));
-        }
+        if (!condition) throw new Error("error: assert " + condition + (msg ? (", msg=" + msg) : ""));
     }
     export function delArrayElement<T>(arr: T[], element: T) {
-        let idx = arr.indexOf(element);
-        if (idx >= 0) arr.splice(idx, 1);
+        let index = arr.indexOf(element);
+        if (index >= 0) arr.splice(index, 1);
     }
 
     // --------------- Constants --------------- //
@@ -52,7 +51,7 @@ namespace LabelPlus {
         const folder = new Folder(path);
         if (!folder.exists) return [];
 
-        const fileList: File[] = folder.getFiles();
+        const fileList: any[] = folder.getFiles();
         const pathList: string[] = [];
 
         for (let i = 0; i < fileList.length; i++) {
@@ -79,6 +78,12 @@ namespace LabelPlus {
     }
     export function endsWith(str: string, suffix: string): boolean {
         return str.indexOf(suffix, str.length - suffix.length) !== -1;
+    }
+
+    // ---------------  JSON  --------------- //
+
+    export function json(str: string): object {
+         return (new Function('return ' + str))();
     }
 
     // --------------- Action --------------- //

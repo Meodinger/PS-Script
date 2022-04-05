@@ -90,8 +90,8 @@ namespace LabelPlus {
         f.lineFeed = "unix";
         f.encoding = "UTF-8";
 
-        const meo = f.read();
-        const data = (new Function('return ' + meo))();
+        const meo  = f.read();
+        const data = json(f.read()) as MeoFile
 
         f.close();
 

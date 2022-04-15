@@ -5,160 +5,181 @@
 
 namespace LabelPlus {
 
-    type GroupInfo = {
+    type GroupSetInfo = {
         layerSet?: LayerSet;
         template?: ArtLayer;
     }
-    type GroupDict = {
-        [key: string]: GroupInfo
+    type GroupSetDict = {
+        [key: string]: GroupSetInfo
     }
-
     type LabelInfo = {
-        index    : number;
-        x        : number;
-        y        : number;
-        text     : string;
-        groupName: string;
-    }
-
-    type Point = {
-        x: number,
-        y: number
+        index: number;
+        x    : number;
+        y    : number;
+        text : string;
+        group: string;
     }
 
     type ImageWorkspace = {
-        document           : Document;
-        groupList          : GroupDict;
-        backgroundLayer    : ArtLayer;
-        textTemplateLayer  : ArtLayer;
-        dialogOverlayLayer : ArtLayer;
-        pendingDelLayerList: ArtLayer[];
+        document: Document;
+        groupList: GroupSetDict;
+        backgroundLayer: ArtLayer;
+        textTemplateLayer: ArtLayer;
+        dialogOverlayLayer: ArtLayer;
+        pendingDeleteLayerList: ArtLayer[];
     }
     type ImageInfo = {
-        ws       : ImageWorkspace;
-        name     : string;
-        name_pair: string;
-        labels   : LPLabel[];
+        workspace: ImageWorkspace;
+        matched: string;
+        origin: string;
+        labels: LPLabel[];
     }
 
-    // 文本导入选项，参数为undefined时表示不设置该项
-    type TextInputOptions = {
-        template   ?: ArtLayer; // 文本图层模板
-        font       ?: string;
-        size       ?: UnitValue;
-        direction  ?: Direction;
-        layerGroup ?: LayerSet;
-        lending    ?: number;   // 自动行距
-    }
-
-    // 文本替换表达式解析
     type TextReplaceInfo = {
         from: string;
         to: string;
     }
-    function textReplaceReader(str: string): TextReplaceInfo[] | null {
+    type TextInputOptions = {
+        // undefined indicates not set
+        // Note: Settings' priority is higher than template
+        template   ?: ArtLayer; // Text Layer Template
+        font       ?: string;
+        size       ?: UnitValue;
+        direction  ?: Direction;
+        layerGroup ?: LayerSet;
+        lending    ?: number;   // Auto Line-Lending
+    }
+
+    function parseTextReplace(str: string): TextReplaceInfo[] | null {
         let arr: TextReplaceInfo[] = [];
 
-        let strings1 = str.split('|');
-        if (!strings1)
-            return null; //解析失败
+        let rawInfos = str.split('|');
+        if (!rawInfos) return null; //解析失败
 
-        for (let i = 0; i < strings1.length; i++) {
-            if (strings1[i] === "")
-                continue;
+        for (let i = 0; i < rawInfos.length; i++) {
+            if (isBlank(rawInfos[i])) continue;
 
-            let strings2 = strings1[i].split("->");
-            if ((strings2.length != 2) || (strings2[0] == ""))
-                return null; //解析失败
+            let raws = rawInfos[i].split("->");
+            if (raws.length != 2 || isEmpty(raws[0])) return null; //解析失败
 
-            arr.push({from: strings2[0], to: strings2[1]});
+            arr.push({from: raws[0], to: raws[1]});
         }
         return arr;
     }
 
     // global var
-    let options: ScriptOptions | null = null;
+    let options: ScriptOptions;
     let textReplace: TextReplaceInfo[] = [];
 
-    function importLabel(image: ImageInfo, label: LabelInfo): boolean {
-        assert(options !== null);
+    function createText(document: Document, text: string, x: number, y: number, textOpts: TextInputOptions = {}): ArtLayer {
+        let artLayerRef: ArtLayer;
+        let textItemRef: TextItem;
 
+        // 从模板创建，可以保证图层的所有格式与模板一致
+        if (textOpts.template) {
+            /// @ts-ignore ts声明文件有误，duplicate()返回ArtLayer对象，而不是void
+            artLayerRef = textOpts.template.duplicate() as ArtLayer;
+            textItemRef = artLayerRef.textItem;
+        } else {
+            artLayerRef = document.artLayers.add();
+            artLayerRef.kind = LayerKind.TEXT;
+            textItemRef = artLayerRef.textItem;
+        }
+
+        if (textOpts.size) textItemRef.size = textOpts.size;
+        if (textOpts.font) textItemRef.font = textOpts.font;
+        if (textOpts.direction) textItemRef.direction = textOpts.direction;
+
+        textItemRef.position = Array(UnitValue(document.width.as("px") * x, "px"), UnitValue(document.height.as("px") * y, "px"));
+
+        if (textOpts.layerGroup) {
+            artLayerRef.move(textOpts.layerGroup, ElementPlacement.PLACEATBEGINNING);
+        }
+
+        if (textOpts.lending && textOpts.lending != 0) {
+            textItemRef.useAutoLeading = true;
+            textItemRef.autoLeadingAmount = textOpts.lending;
+        }
+
+        artLayerRef.name = text;
+        textItemRef.contents = text;
+
+        return artLayerRef;
+    }
+    function importLabel(image: ImageInfo, label: LabelInfo): boolean {
         // import the index of the Label
         if (options.outputLabelIndex) {
-            let o: TextInputOptions = {
-                template: image.ws.textTemplateLayer,
+            let textInputOptions: TextInputOptions = {
+                template: image.workspace.textTemplateLayer,
                 font: "Arial",
                 size: (options.fontSize !== 0) ? UnitValue(options.fontSize, "pt") : undefined,
                 direction: Direction.HORIZONTAL,
-                layerGroup: image.ws.groupList["_Label"].layerSet,
+                layerGroup: image.workspace.groupList["_Label"].layerSet,
             };
-            newTextLayer(image.ws.document, String(label.index), label.x, label.y, o);
+            createText(image.workspace.document, String(label.index), label.x, label.y, textInputOptions);
         }
 
-        // 替换文本
+        // Replace text
         if (options.textReplace) {
-            for (let k = 0; k < textReplace.length; k++) {
-                while (label.text.indexOf(textReplace[k].from) != -1) {
-                    label.text = label.text.replace(textReplace[k].from, textReplace[k].to);
+            for (let i = 0; i < textReplace.length; i++) {
+                while (label.text.indexOf(textReplace[i].from) != -1) {
+                    label.text = label.text.replace(textReplace[i].from, textReplace[i].to);
                 }
             }
         }
 
-        // 确定文字方向
-        let textDirection: Direction | undefined;
-        switch (options.textDirection) {
-            case OptionTextDirection.KEEP:
-                textDirection = undefined;
-                break;
-            case OptionTextDirection.HORIZONTAL:
-                textDirection = Direction.HORIZONTAL;
-                break;
-            case OptionTextDirection.VERTICAL:
-                textDirection = Direction.VERTICAL;
-                break;
-        }
-
-        // 导出文本，设置的优先级大于模板，无模板时做部分额外处理
-        let textLayer: ArtLayer;
-        let o: TextInputOptions = {
-            template: image.ws.groupList[label.groupName].template,
-            font: (options.font != "") ? options.font : undefined,
-            direction: textDirection,
-            layerGroup: image.ws.groupList[label.groupName].layerSet,
+        // Setup input options
+        let textInputOptions: TextInputOptions = {
+            template: image.workspace.groupList[label.group].template,
+            font: isBlank(options.font) ? options.font : undefined,
+            layerGroup: image.workspace.groupList[label.group].layerSet,
             lending: options.textLeading ? options.textLeading : undefined,
         };
-
-        // 使用模板时，用户不设置字体大小，不做更改；不使用模板时，如果用户不设置大小，自动调整到合适的大小
+        // Choose text direction
+        switch (options.textDirection) {
+            case OptionTextDirection.KEEP:
+                textInputOptions.direction = undefined;
+                break;
+            case OptionTextDirection.HORIZONTAL:
+                textInputOptions.direction = Direction.HORIZONTAL;
+                break;
+            case OptionTextDirection.VERTICAL:
+                textInputOptions.direction = Direction.VERTICAL;
+                break;
+        }
+        // Set font size
         if (options.docTemplate === OptionDocTemplate.NO) {
-            let proper_size = UnitValue(min(image.ws.document.height.as("pt"), image.ws.document.height.as("pt")) / 90.0, "pt");
-            o.size = (options.fontSize !== 0) ? UnitValue(options.fontSize, "pt") : proper_size;
+            // If user do not use template, set to proper size
+            let properSize = UnitValue(min(image.workspace.document.width.as("pt"), image.workspace.document.height.as("pt")) / 90.0, "pt");
+            textInputOptions.size = (options.fontSize !== 0) ? UnitValue(options.fontSize, "pt") : properSize;
         } else {
-            o.size = (options.fontSize !== 0) ? UnitValue(options.fontSize, "pt") : undefined;
+            // If user use template, let it undefined
+            textInputOptions.size = (options.fontSize !== 0) ? UnitValue(options.fontSize, "pt") : undefined;
         }
-        textLayer = newTextLayer(image.ws.document, label.text, label.x, label.y, o);
 
-        // 执行动作,名称为分组名
+        let textLayer: ArtLayer = createText(image.workspace.document, label.text, label.x, label.y, textInputOptions);
+
+        // Run post-import action
         if (options.actionGroup) {
-            image.ws.document.activeLayer = textLayer;
-            let result = doAction(label.groupName, options.actionGroup);
-            log("run action " + label.groupName + "[" + options.actionGroup + "]..." + result ? "done" : "fail");
+            image.workspace.document.activeLayer = textLayer;
+            let result = doAction(label.group, options.actionGroup);
+            log("run action " + label.group + "[" + options.actionGroup + "]..." + result ? "done" : "fail");
         }
+
         return true;
     }
-
     function importImage(image: ImageInfo): boolean {
-        assert(options !== null);
-
-        // run action _start
+        // Run action _start
         if (options.actionGroup) {
-            image.ws.document.activeLayer = image.ws.document.layers[image.ws.document.layers.length - 1];
+            image.workspace.document.activeLayer = image.workspace.document.layers[image.workspace.document.layers.length - 1];
             let result = doAction("_start", options.actionGroup);
             log("run action _start[" + options.actionGroup + "]..." + result ? "done" : "fail");
         }
 
+        // todo: figure out whether preserve this procedure
         // 找出需要涂白的标签,记录他们的坐标,执行涂白
         if (options.dialogOverlayLabelGroups) {
-            let points: Point[] = [];
+            let points: {x: number, y: number}[] = [];
             let groups = options.dialogOverlayLabelGroups.split(",");
             for (let j = 0; j < image.labels.length; j++) {
                 const label = image.labels[j];
@@ -167,200 +188,196 @@ namespace LabelPlus {
                 }
             }
             log("do lp_dialogClear: " + points);
-            MyAction.lp_dialogClear(points, image.ws.document.width, image.ws.document.height, 16, 1, image.ws.dialogOverlayLayer);
-            delArrayElement<ArtLayer>(image.ws.pendingDelLayerList, image.ws.dialogOverlayLayer); // do not delete dialog-overlay-layer
+            MyAction.lp_dialogClear(points, image.workspace.document.width, image.workspace.document.height, 16, 1, image.workspace.dialogOverlayLayer);
+            delArrayElement<ArtLayer>(image.workspace.pendingDeleteLayerList, image.workspace.dialogOverlayLayer); // do not delete dialog-overlay-layer
         }
 
-        // 遍历LabelData
-        for (let j = 0; j < image.labels.length; j++) {
-            const l = image.labels[j];
+        for (let i = 0; i < image.labels.length; i++) {
+            const label = image.labels[i];
 
             // the groupName did not select by user, return directly
-            if (options.groupSelected.indexOf(l.groupName) == -1) continue;
+            if (options.groupSelected.indexOf(label.groupName) == -1) continue;
 
-            const label_info: LabelInfo = {
-                index: j + 1,
-                x: l.x,
-                y: l.y,
-                groupName: l.groupName,
-                text: l.text,
+            const labelInfo: LabelInfo = {
+                index: i + 1,
+                x: label.x,
+                y: label.y,
+                group: label.groupName,
+                text: label.text,
             };
-            log("import label " + label_info.index + "...");
-            importLabel(image, label_info);
+            log("import label " + labelInfo.index + "...");
+            importLabel(image, labelInfo);
         }
 
-        // adjust layer order
-        if (image.ws.backgroundLayer && (options.dialogOverlayLabelGroups !== "")) {
+        // Adjust layer order
+        if (image.workspace.backgroundLayer && (options.dialogOverlayLabelGroups !== "")) {
             log('move "dialog-overlay" before "bg"');
-            image.ws.dialogOverlayLayer.move(image.ws.backgroundLayer, ElementPlacement.PLACEBEFORE);
+            image.workspace.dialogOverlayLayer.move(image.workspace.backgroundLayer, ElementPlacement.PLACEBEFORE);
         }
 
-        // remove unnecessary Layer/LayerSet
+        // Remove unnecessary Layer & LayerSet
         log('remove unnecessary Layer/LayerSet...');
-        for (const layer of image.ws.pendingDelLayerList) { // Layer
+        for (const layer of image.workspace.pendingDeleteLayerList) {
             layer.remove();
         }
-        for (const k in image.ws.groupList) { // LayerSet
-            if (image.ws.groupList[k].layerSet !== undefined) {
-                if (image.ws.groupList[k].layerSet?.artLayers.length === 0) {
-                    image.ws.groupList[k].layerSet?.remove();
-                }
+        for (const groupName in image.workspace.groupList) {
+            if (image.workspace.groupList[groupName]?.layerSet?.artLayers.length === 0) {
+                image.workspace.groupList[groupName]?.layerSet?.remove();
             }
         }
 
-        // run action _end
+        // Run action _end
         if (options.actionGroup) {
-            image.ws.document.activeLayer = image.ws.document.layers[image.ws.document.layers.length - 1];
+            image.workspace.document.activeLayer = image.workspace.document.layers[image.workspace.document.layers.length - 1];
             let result = doAction("_end", options.actionGroup);
             log("run action _end[" + options.actionGroup + "]..." + result ? "done" : "fail");
         }
+
         return true;
     }
 
-    function openImageWorkspace(img_filename: string, template_path: string): ImageWorkspace | null {
-        assert(options !== null);
-
+    function prepareWorkspace(imageName: string, templatePath: string): ImageWorkspace | null {
         // open background image
-        let bgDoc: Document;
+        let backgroundDocument: Document;
         try {
-            let bgFile = new File(options.source + DIR_SEPARATOR + img_filename);
-            bgDoc = app.open(bgFile);
+            backgroundDocument = app.open(new File(options.source + DIR_SEPARATOR + imageName));
         } catch {
-            return null; //note: do not exit if image not exist
+            // Note: do not exit if image not exist
+            return null;
         }
 
-        // if template is enabled, open template; or create a new file
-        let wsDoc: Document; // workspace document
+        let workspaceDocument: Document; // workspace document
         if (options.docTemplate == OptionDocTemplate.NO) {
-            wsDoc = app.documents.add(bgDoc.width, bgDoc.height, bgDoc.resolution, bgDoc.name, NewDocumentMode.RGB, DocumentFill.TRANSPARENT);
-            wsDoc.activeLayer.name = TEMPLATE_LAYER.IMAGE;
+            // Disabled, create a new document
+            workspaceDocument = app.documents.add(backgroundDocument.width, backgroundDocument.height, backgroundDocument.resolution, backgroundDocument.name, NewDocumentMode.RGB, DocumentFill.TRANSPARENT);
+            workspaceDocument.activeLayer.name = TEMPLATE_LAYER.IMAGE;
         } else {
-            let docFile = new File(template_path);  //note: if template must do not exist, crash
-            wsDoc = app.open(docFile);
-            wsDoc.resizeImage(undefined, undefined, bgDoc.resolution);
-            wsDoc.resizeCanvas(bgDoc.width, bgDoc.height);
+            // Note: must crash if template do not exist
+            workspaceDocument = app.open(new File(templatePath));
+            workspaceDocument.resizeImage(undefined, undefined, backgroundDocument.resolution);
+            workspaceDocument.resizeCanvas(backgroundDocument.width, backgroundDocument.height);
         }
 
-        // wsDoc is clean, check template elements, if a element not exist
-        let bgLayer: ArtLayer;
+        // Workspace document is clean, check template elements, if an element not exist
+        let backgroundLayer: ArtLayer;
         let textTemplateLayer: ArtLayer;
         let dialogOverlayLayer: ArtLayer;
         let pendingDelLayerList: ArtLayer[] = [];
         {
             // add all artLayers to the pending delete list
-            for (let i = 0; i < wsDoc.artLayers.length; i++) {
-                let layer: ArtLayer = wsDoc.artLayers[i];
+            for (let i = 0; i < workspaceDocument.artLayers.length; i++) {
+                let layer: ArtLayer = workspaceDocument.artLayers[i];
                 pendingDelLayerList.push(layer);
             }
 
             // bg layer template
             try {
-                bgLayer = wsDoc.artLayers.getByName(TEMPLATE_LAYER.IMAGE);
+                backgroundLayer = workspaceDocument.artLayers.getByName(TEMPLATE_LAYER.IMAGE);
             } catch {
-                bgLayer = wsDoc.artLayers.add();
-                bgLayer.name = TEMPLATE_LAYER.DIALOG_OVERLAY;
+                backgroundLayer = workspaceDocument.artLayers.add();
+                backgroundLayer.name = TEMPLATE_LAYER.DIALOG_OVERLAY; // todo: why dialog_overlay
             }
             // text layer template
             try {
-                textTemplateLayer = wsDoc.artLayers.getByName(TEMPLATE_LAYER.TEXT);
+                textTemplateLayer = workspaceDocument.artLayers.getByName(TEMPLATE_LAYER.TEXT);
             } catch {
-                textTemplateLayer = wsDoc.artLayers.add();
+                textTemplateLayer = workspaceDocument.artLayers.add();
                 textTemplateLayer.name = TEMPLATE_LAYER.TEXT;
                 pendingDelLayerList.push(textTemplateLayer); // pending delete
             }
             // dialog overlay layer template
             try {
-                dialogOverlayLayer = wsDoc.artLayers.getByName(TEMPLATE_LAYER.DIALOG_OVERLAY);
+                dialogOverlayLayer = workspaceDocument.artLayers.getByName(TEMPLATE_LAYER.DIALOG_OVERLAY);
             } catch {
-                dialogOverlayLayer = wsDoc.artLayers.add();
+                dialogOverlayLayer = workspaceDocument.artLayers.add();
                 dialogOverlayLayer.name = TEMPLATE_LAYER.DIALOG_OVERLAY;
             }
         }
 
-        // import bgDoc to wsDoc:
-        // if bgDoc has only a layer, select all and copy to bg layer, for applying bg layer template
-        // if bgDoc has multiple layers, move all layers after bg layer (bg layer template is invalid)
-        if ((bgDoc.artLayers.length == 1) && (bgDoc.layerSets.length == 0)) {
-            app.activeDocument = bgDoc;
-            bgDoc.selection.selectAll();
-            bgDoc.selection.copy();
-            app.activeDocument = wsDoc;
-            wsDoc.activeLayer = bgLayer;
-            wsDoc.paste();
-            delArrayElement<ArtLayer>(pendingDelLayerList, bgLayer); // keep bg layer
+        // Import background doc to workspace doc:
+        // If bgDoc has only one layer, select all and copy to bg layer. (apply bg layer template)
+        // If bgDoc has multi layers, move all layers after bg layer. (bg layer template is invalid)
+        // Note: copy will occupy the clipboard
+        if (backgroundDocument.artLayers.length == 1 && backgroundDocument.layerSets.length == 0) {
+            app.activeDocument = backgroundDocument;
+            backgroundDocument.selection.selectAll();
+            backgroundDocument.selection.copy();
+            app.activeDocument = workspaceDocument;
+            workspaceDocument.activeLayer = backgroundLayer;
+            workspaceDocument.paste();
+            delArrayElement<ArtLayer>(pendingDelLayerList, backgroundLayer); // keep bg layer
         } else {
-            app.activeDocument = bgDoc;
-            let item = bgLayer;
-            for (let i = 0; i < bgDoc.layers.length; i++) {
-                item = bgDoc.layers[i].duplicate(item, ElementPlacement.PLACEAFTER);
+            app.activeDocument = backgroundDocument;
+            let item = backgroundLayer;
+            for (let i = 0; i < backgroundDocument.layers.length; i++) {
+                item = backgroundDocument.layers[i].duplicate(item, ElementPlacement.PLACEAFTER);
             }
         }
-        bgDoc.close(SaveOptions.DONOTSAVECHANGES);
+        backgroundDocument.close(SaveOptions.DONOTSAVECHANGES);
 
-        if (wsDoc.mode == DocumentMode.INDEXEDCOLOR) {
-            // 若文档类型为索引色模式 更改为RGB模式
-            log("wsDoc.mode is INDEXEDCOLOR, set RGB");
-            wsDoc.changeMode(ChangeMode.RGB);
-        } else if (wsDoc.mode == DocumentMode.GRAYSCALE) {
-            // 若文档类型为Greyscale模式 更改为RGB模式
-            log("wsDoc.mode is Greyscale, set RGB")
-            wsDoc.changeMode(ChangeMode.RGB)
+        if (workspaceDocument.mode == DocumentMode.INDEXEDCOLOR) {
+            log("wsDoc.mode is IndexedColor, set to RGB");
+            workspaceDocument.changeMode(ChangeMode.RGB);
         }
 
-        // 分组
-        let groups: GroupDict = {};
+        // Note: No need to change GreyScale Mode
+        // if (workspaceDocument.mode == DocumentMode.GRAYSCALE) {
+        //    log("wsDoc.mode is GreyScale, set to RGB")
+        //    workspaceDocument.changeMode(ChangeMode.RGB)
+        // }
+
+        // Create Groups (ArtLayerSet)
+        let groups: GroupSetDict = {};
         for (let i = 0; i < options.groupSelected.length; i++) {
             let name = options.groupSelected[i];
-            let tmp: GroupInfo = {};
+            let temp: GroupSetInfo = {};
 
             // 创建PS中图层分组
             if (!options.noLayerGroup) {
-                tmp.layerSet = wsDoc.layerSets.add();
-                tmp.layerSet.name = name;
+                temp.layerSet = workspaceDocument.layerSets.add();
+                temp.layerSet.name = name;
             }
             // 尝试寻找分组模板，找不到则使用默认文本模板
             if (options.docTemplate !== OptionDocTemplate.NO) {
-                let l: ArtLayer | undefined;
+                let textLayer: ArtLayer;
                 try {
-                    l = wsDoc.artLayers.getByName(name);
-                } catch { }
-                tmp.template = (l !== undefined) ? l : textTemplateLayer;
+                    textLayer = workspaceDocument.artLayers.getByName(name);
+                } catch {
+                    textLayer = textTemplateLayer
+                }
+                temp.template = textLayer;
             }
-            groups[name] = tmp; // add
+            groups[name] = temp; // add
         }
         if (options.outputLabelIndex) {
-            let tmp: GroupInfo = {};
-            tmp.layerSet = wsDoc.layerSets.add();
-            tmp.layerSet.name = "Label";
-            groups["_Label"] = tmp;
+            let temp: GroupSetInfo = {};
+            temp.layerSet = workspaceDocument.layerSets.add();
+            temp.layerSet.name = "_Label";
+            groups["_Label"] = temp;
         }
 
         return {
-            document: wsDoc,
-            backgroundLayer: bgLayer,
+            document: workspaceDocument,
+            backgroundLayer: backgroundLayer,
             textTemplateLayer: textTemplateLayer,
             dialogOverlayLayer: dialogOverlayLayer,
-            pendingDelLayerList: pendingDelLayerList,
+            pendingDeleteLayerList: pendingDelLayerList,
             groupList: groups,
         };
     }
-
-    function closeImage(img: ImageInfo, saveType: OptionOutputType = OptionOutputType.PSD): boolean {
-        assert(options !== null);
-
-        // 保存文件
-        let fileOut = new File(options.target + DIR_SEPARATOR + img.name);
+    function cleanupWorkspace(imageInfo: ImageInfo, saveType: OptionOutputType = OptionOutputType.PSD): boolean {
+        let fileOut = new File(options.target + DIR_SEPARATOR + imageInfo.matched);
         let asCopy = false;
         let saveOpts: any;
         switch (saveType) {
             case OptionOutputType.PSD:
-                saveOpts = PhotoshopSaveOptions;
+                saveOpts = new PhotoshopSaveOptions();
                 break;
             case OptionOutputType.TIFF:
-                saveOpts = TiffSaveOptions;
+                saveOpts = new TiffSaveOptions();
                 break;
             case OptionOutputType.PNG:
-                saveOpts = PNGSaveOptions;
+                saveOpts = new PNGSaveOptions();
                 asCopy = true;
                 break;
             case OptionOutputType.JPG:
@@ -369,28 +386,27 @@ namespace LabelPlus {
                 asCopy = true;
                 break;
             default:
-                err(img.name_pair + ": unknown save type " + saveType);
+                err(imageInfo.origin + "(" + imageInfo.matched + "): unknown save type " + saveType);
                 return false
         }
 
-        let extensionType = Extension.LOWERCASE;
-        img.ws.document.saveAs(fileOut, saveOpts, asCopy, extensionType);
+        imageInfo.workspace.document.saveAs(fileOut, saveOpts, asCopy, Extension.LOWERCASE);
 
-        // 关闭文件
-        if (!options.notClose) img.ws.document.close(SaveOptions.DONOTSAVECHANGES);
+        // Close
+        if (!options.notClose) imageInfo.workspace.document.close(SaveOptions.DONOTSAVECHANGES);
 
         return true;
     }
 
-    export function importFiles(custom_opts: ScriptOptions): boolean {
-        options = custom_opts;
+    export function importFiles(scriptOptions: ScriptOptions): boolean {
+        options = scriptOptions;
 
         log("Start import process!!!");
         log("Properties start ------------------");
         log(Stdlib.listProps(options));
         log("Properties end   ------------------");
 
-        //解析LabelPlus文本
+        // Parse text file
         let lpFile = parseTransFile(options.lpTextFilePath);
         if (lpFile == null) {
             err("error: " + I18n.ERROR_PARSER_LPTEXT_FAIL);
@@ -398,24 +414,24 @@ namespace LabelPlus {
         }
         log("parse lp text done...");
 
-        // 替换文本解析
+        // Parse ReplaceInfo
         if (options.textReplace) {
-            let tmp = textReplaceReader(options.textReplace);
-            if (tmp === null) {
+            let temp = parseTextReplace(options.textReplace);
+            if (temp === null) {
                 err("error: " + I18n.ERROR_TEXT_REPLACE_EXPRESSION);
                 return false;
             }
-            textReplace = tmp;
+            textReplace = temp;
         }
         log("parse text replace done...");
 
-        // 确定doc模板文件
-        let template_path: string = "";
+        // Use document template
+        let templatePath: string = "";
         switch (options.docTemplate) {
             case OptionDocTemplate.CUSTOM:
-                template_path = options.docTemplateCustomPath;
-                if (!isFileExists(template_path)) {
-                    err("error: " + I18n.ERROR_NOT_FOUND_TEMPLATE + " " + template_path);
+                templatePath = options.docTemplateCustomPath;
+                if (!isFileExists(templatePath)) {
+                    err("error: " + I18n.ERROR_NOT_FOUND_TEMPLATE + " " + templatePath);
                     return false;
                 }
                 break;
@@ -429,15 +445,15 @@ namespace LabelPlus {
                 ];
                 for (let i = 0; i < try_list.length; i++) {
                     if (isFileExists(try_list[i])) {
-                        template_path = try_list[i];
+                        templatePath = try_list[i];
                         break;
                     }
                 }
-                if (template_path === "") {
+                if (templatePath === "") {
                     err("error: " + I18n.ERROR_PRESET_TEMPLATE_NOT_FOUND);
                     return false;
                 }
-                log("auto match template: " + template_path);
+                log("auto match template: " + templatePath);
                 break;
             case OptionDocTemplate.NO:
             default:
@@ -445,76 +461,36 @@ namespace LabelPlus {
                 break;
         }
 
-        // 遍历所选图片
+        // Import
         for (let i = 0; i < options.imageSelected.length; i++) {
-            let origin_name: string = options.imageSelected[i].file; // 翻译文件中的图片文件名
-            let matched_name: string = options.imageSelected[i].matched_file;
-            let name_pair = LabelPlus.FileNamePair(origin_name, matched_name);
+            let originName: string = options.imageSelected[i].file; // 翻译文件中的图片文件名
+            let matchedName: string = options.imageSelected[i].matched_file;
+            let namePair = originName + "(" + matchedName + ")";
 
-            log(name_pair + 'in processing...');
-            if (options.ignoreNoLabelImg && lpFile?.transMap[origin_name].length == 0) { // ignore img with no label
+            log(namePair + 'in processing...');
+            if (options.ignoreNoLabelImg && lpFile.transMap[originName].length == 0) {
                 log('no label, ignored...');
                 continue;
             }
-            let ws = openImageWorkspace(matched_name, template_path);
-            if (ws == null) {
-                err(name_pair + ": " + I18n.ERROR_FILE_OPEN_FAIL);
+            let workspace = prepareWorkspace(matchedName, templatePath);
+            if (workspace == null) {
+                err(namePair + ": " + I18n.ERROR_FILE_OPEN_FAIL);
                 continue;
             }
 
-            let img_info: ImageInfo = {
-                ws: ws,
-                name: matched_name,
-                name_pair: name_pair,
-                labels: lpFile.transMap[origin_name],
+            let imageInfo: ImageInfo = {
+                workspace: workspace,
+                matched: matchedName,
+                origin: originName,
+                labels: lpFile.transMap[originName],
             };
-            if (!importImage(img_info)) {
-                err(name_pair + ": import label failed");
-            }
-            if (!closeImage(img_info, options.outputType)) {
-                err(name_pair + ": " + I18n.ERROR_FILE_SAVE_FAIL);
-            }
-            log(name_pair + ": done");
+            if (!importImage(imageInfo)) err(namePair + ": import label failed");
+            if (!cleanupWorkspace(imageInfo, options.outputType)) err(namePair + ": " + I18n.ERROR_FILE_SAVE_FAIL);
+
+            log(namePair + ": done");
         }
         log("All Done!");
         return true;
-    }
-
-    // 创建文本图层
-    function newTextLayer(doc: Document, text: string, x: number, y: number, textOpts: TextInputOptions = {}): ArtLayer {
-        let artLayerRef: ArtLayer;
-        let textItemRef: TextItem;
-
-        // 从模板创建，可以保证图层的所有格式与模板一致
-        if (textOpts.template) {
-            /// @ts-ignore ts声明文件有误，duplicate()返回ArtLayer对象，而不是void
-            artLayerRef = <ArtLayer>textOpts.template.duplicate();
-            textItemRef = artLayerRef.textItem;
-        } else {
-            artLayerRef = doc.artLayers.add();
-            artLayerRef.kind = LayerKind.TEXT;
-            textItemRef = artLayerRef.textItem;
-        }
-
-        if (textOpts.size) textItemRef.size = textOpts.size;
-        if (textOpts.font) textItemRef.font = textOpts.font;
-        if (textOpts.direction) textItemRef.direction = textOpts.direction;
-
-        textItemRef.position = Array(UnitValue(doc.width.as("px") * x, "px"), UnitValue(doc.height.as("px") * y, "px"));
-
-        if (textOpts.layerGroup) {
-            artLayerRef.move(textOpts.layerGroup, ElementPlacement.PLACEATBEGINNING);
-        }
-
-        if ((textOpts.lending) && (textOpts.lending != 0)) {
-            textItemRef.useAutoLeading = true;
-            textItemRef.autoLeadingAmount = textOpts.lending;
-        }
-
-        artLayerRef.name = text;
-        textItemRef.contents = text;
-
-        return artLayerRef;
     }
 
 }

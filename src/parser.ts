@@ -30,14 +30,13 @@ namespace LabelPlus {
         color: string;
         name: string;
     }
-    type MeoTransMap = {
-        [key: string]: MeoLabel[]
-    }
     type MeoFile = {
         version: number[];
         comment: string;
         groupList: MeoGroup[],
-        transMap: MeoTransMap
+        transMap: {
+            [key: string]: MeoLabel[]
+        }
     }
 
     const PIC_START = ">>>>>>>>["
@@ -90,7 +89,6 @@ namespace LabelPlus {
         f.lineFeed = "unix";
         f.encoding = "UTF-8";
 
-        const meo  = f.read();
         const data = json(f.read()) as MeoFile
 
         f.close();
@@ -199,7 +197,7 @@ namespace LabelPlus {
         const comment = parseText([PIC_START])
 
         // Content
-        const transMap: MeoTransMap = {}
+        const transMap = {}
         while (pointer < size && startsWith(lines[pointer], PIC_START)) {
             const picName = parsePicHead()
             transMap[picName] = parsePicBody()

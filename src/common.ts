@@ -3,7 +3,7 @@
 
 namespace LabelPlus {
 
-    // --------------- Common --------------- //
+    // -------------- Common --------------- //
 
     export function min(a: number, b: number): number {
         return (a < b) ? a : b;
@@ -22,7 +22,7 @@ namespace LabelPlus {
         if (index >= 0) arr.splice(index, 1);
     }
 
-    // --------------- Constants --------------- //
+    // -------------- Constants -------------- //
 
     export const DIR_SEPARATOR    = $.os.search(/windows/i) === -1 ? '/' : '\\';
     export const IMAGE_EXTENSIONS = [".psd", ".png", ".jpg", ".jpeg", ".tif", ".tiff"];
@@ -32,7 +32,7 @@ namespace LabelPlus {
         DIALOG_OVERLAY: "dialog-overlay",
     }
 
-    // --------------- File Related --------------- //
+    // ------------ File Related ------------- //
 
     export function isFileExists(path: string): boolean {
         return (new File(path)).exists;
@@ -73,6 +73,12 @@ namespace LabelPlus {
 
     // --------------- String --------------- //
 
+    export function isEmpty(str: string): boolean {
+        return str.length === 0;
+    }
+    export function isBlank(str: string): boolean {
+        return str.length === 0 || str.replace(/\s+/g, "").length === 0;
+    }
     export function startsWith(str: string, head: string): boolean {
         return str.indexOf(head) === 0;
     }
@@ -97,7 +103,7 @@ namespace LabelPlus {
         return false;
     }
 
-    // --------------- Global Variable --------------- //
+    // ---------- Global Variable ----------- //
 
     let dataPath = Folder.appData.fsName + DIR_SEPARATOR + "labelplus_script";
     let dataFolder = new Folder(dataPath);
@@ -117,9 +123,5 @@ namespace LabelPlus {
     export function log(msg: any) { Stdlib.log(msg); commonLog += msg + '\n'; }
     export function err(msg: any) { Stdlib.log(msg); errorLog += msg + '\n'; commonLog += msg + '\n'; }
     export function dump(o: any) { alert(Stdlib.listProps(o)); }
-
-    export function FileNamePair(origin: string, matched: string): string {
-        return origin + "(" + matched + ")";
-    }
 
 }
